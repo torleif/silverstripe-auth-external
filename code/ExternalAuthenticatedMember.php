@@ -13,8 +13,7 @@
  * This class adds the needed fields to the default member class to support
  * authentication via the external authentication method.
  */
-class ExternalAuthenticatedRole extends DataObjectDecorator {
-
+class ExternalAuthenticatedMember extends DataExtension {
     /**
      * Define extra database fields
      *
@@ -24,18 +23,14 @@ class ExternalAuthenticatedRole extends DataObjectDecorator {
      * @return array Returns a map where the keys are db, has_one, etc, and
      *               the values are additional fields/relations to be defined
      */
-    function extraStatics() {
-        return array(
-            'db' => array('External_Anchor' => 'Varchar(255)', 
-                          'External_SourceID' => 'Varchar(50)'),
-            'has_one' => array(),
-            'defaults' => array('External_Anchor' => null,
-                                'External_SourceID' => null),
-            'indexes' => array('External_Anchor' => true)
-        );
-    }
-
-
+    static $db = array(
+        'External_UserID' => 'Varchar(255)',
+        'External_SourceID' => 'Varchar(50)',
+    );
+    static $has_one = array();
+    static $defaults = array();
+    static $indexes = array();
+    
     /**
      * Edit the given query object to support queries for this extension
      *
@@ -62,17 +57,9 @@ class ExternalAuthenticatedRole extends DataObjectDecorator {
      * This method updates the form in the member dialog to make it possible
      * to edit the new database fields.
      */
-    function updateCMSFields(FieldSet &$fields) {
-    	// let make sure, this runs only once (because member and dataobject both extend updateCMSFields
-    	// 	making it run twice!)
-    	$cp = $fields->fieldByName('Root');
-    	if ($cp && $cp->fieldByName('ExternalAuthentication')) return;
-
-    	$sources    = ExternalAuthenticator::getIDandNames();
+    function updateCMSFields(FieldList $fields) {
+        $sources    = ExternalAuthenticator::getIDandNames();
         $sources    = array_merge(array("" => "-"), $sources);
-		$fields->findOrMakeTab('Root.ExternalAuthentication', _t('ExternalAuthenticator.Title'));
-        $fields->addFieldToTab('Root.ExternalAuthentication',
-        						new HeaderField('External_Header', _t('ExternalAuthenticator.ModFormHead','ID for external authentication source')));
         $fields->addFieldToTab('Root.ExternalAuthentication', 
                                new LiteralField('ExternalDescription',_t('ExternalAuthenticator.EnterUser',
                                                 'Enter the user id and authentication source for this user'))
@@ -81,7 +68,7 @@ class ExternalAuthenticatedRole extends DataObjectDecorator {
                                new DropdownField('External_SourceID', _t('ExternalAuthenticator.Sources'),
                                                  $sources));
         $fields->addFieldToTab('Root.ExternalAuthentication',
-                               new TextField('External_Anchor', _t('ExternalAuthenticator.EnterNewId',
+                               new TextField('External_UserID', _t('ExternalAuthenticator.EnterNewId',
                                                                    'ID to be used with this source')));
     }
 
@@ -93,17 +80,11 @@ class ExternalAuthenticatedRole extends DataObjectDecorator {
      *
      * @return bool Returns TRUE if this member can be edited, FALSE otherwise
      */
-    function canEdit() {
-        if($this->owner->ID == Member::currentUserID()) {
+    function canEdit($member) {
+        if($this->owner->ID == $member->ID) {
             return true;
         }
-
-        $member = Member::currentUser();
-        if($member) {
-            return $member->isAdmin();
-        }
-
-        return false;
+        return Permission::check('ADMIN');
     }
 }
 
@@ -113,7 +94,7 @@ class ExternalAuthenticatedRole extends DataObjectDecorator {
  * Validator of the decorator for the member class to support OpenID
  * authentication
  */
-class ExternalAuthenticatedRole_Validator extends Extension {
+class ExternalAuthenticatedMember_Validator extends Extension {
 
     /**
      * Server-side validation
@@ -126,14 +107,14 @@ class ExternalAuthenticatedRole_Validator extends Extension {
      *              FALSE.
      */
     function updatePHP(array $data, Form &$form) {
-        if (!isset($data['External_Anchor']) || strlen(trim($data['External_Anchor'])) == 0 || 
+        if (!isset($data['External_UserID']) || strlen(trim($data['External_UserID'])) == 0 || 
             !isset($data['External_SourceID']) || strlen($data['External_SourceID']) == 0)
             return true;
 
         $member = DataObject::get_one('Member',
-                  '"External_Anchor" = \''. 
-                  Convert::raw2sql($data['External_Anchor']) .
-                  '\' AND "External_SourceID" = \'' . 
+                  'External_UserID = \''. 
+                  Convert::raw2sql($data['External_UserID']) .
+                  '\' AND External_SourceID = \'' . 
                   Convert::raw2sql($data['External_SourceID']) .'\'');
 
         // if we are in a complex table field popup, use ctf[childID], else use
@@ -146,7 +127,7 @@ class ExternalAuthenticatedRole_Validator extends Extension {
         }
 
         if(is_object($member) && $member->ID != $id) {
-            $field = $form->dataFieldByName('External_Anchor');
+            $field = $form->dataFieldByName('External_UserID');
             $this->owner->validationError($field->id(),
                 _t('ExternalAuthenticator.UserExists', 'There already exists a member with this account name'),
                 'required');
